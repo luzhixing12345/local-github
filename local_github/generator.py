@@ -1,0 +1,379 @@
+"""Generate static HTML shells and data shards from local GitHub JSON data."""
+
+from __future__ import annotations
+
+import html
+import json
+import shutil
+import urllib.parse
+from pathlib import Path
+from typing import Any, Dict, Iterable, List
+
+from .github_api import Repository
+from .storage import load_bundle, repo_data_dir
+
+
+DOCS_ROOT = Path("docs")
+ASSETS_ROOT = Path(__file__).resolve().parent / "assets"
+PAGE_SIZE = 100
+DETAIL_GROUP_SIZE = 50
+GITHUB_MARK_PATH = "M12.026 2c-5.509 0-9.974 4.465-9.974 9.974 0 4.406 2.857 8.145 6.821 9.465.499.09.679-.217.679-.481 0-.237-.008-.865-.011-1.696-2.775.602-3.361-1.338-3.361-1.338-.452-1.152-1.107-1.459-1.107-1.459-.905-.619.069-.605.069-.605 1.002.07 1.527 1.028 1.527 1.028.89 1.524 2.336 1.084 2.902.829.091-.645.351-1.085.635-1.334-2.214-.251-4.542-1.107-4.542-4.93 0-1.087.389-1.979 1.024-2.675-.101-.253-.446-1.268.099-2.64 0 0 .837-.269 2.742 1.021a9.582 9.582 0 0 1 2.496-.336 9.554 9.554 0 0 1 2.496.336c1.906-1.291 2.742-1.021 2.742-1.021.545 1.372.203 2.387.099 2.64.64.696 1.024 1.587 1.024 2.675 0 3.833-2.33 4.675-4.552 4.922.355.308.675.916.675 1.846 0 1.334-.012 2.41-.012 2.737 0 .267.178.577.687.479C19.146 20.115 22 16.379 22 11.974 22 6.465 17.535 2 12.026 2z"
+GITHUB_FAVICON = "data:image/svg+xml," + urllib.parse.quote(
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="{GITHUB_MARK_PATH}"/></svg>',
+    safe="",
+)
+
+
+def build_site(repos: Iterable[Repository], docs_root: Path = DOCS_ROOT) -> None:
+    docs_root.mkdir(parents=True, exist_ok=True)
+    copy_assets(docs_root)
+
+    loaded = [(repo, load_bundle(repo)) for repo in repos]
+    write_page(docs_root / "index.html", render_index(loaded))
+
+    for repo, bundle in loaded:
+        repo_root = docs_root / "repos" / repo.owner / repo.name
+        if repo_root.exists():
+            shutil.rmtree(repo_root)
+        repo_root.mkdir(parents=True, exist_ok=True)
+        write_repo_data(repo_data_dir(repo), bundle)
+        write_page(repo_root / "issues.html", render_collection_shell(repo, bundle, "issues"))
+        write_page(repo_root / "pulls.html", render_collection_shell(repo, bundle, "pulls"))
+
+
+def copy_assets(docs_root: Path) -> None:
+    for name in ("css", "js"):
+        source = ASSETS_ROOT / name
+        target = docs_root / name
+        if target.exists():
+            shutil.rmtree(target)
+        if source.exists():
+            shutil.copytree(source, target)
+
+
+def write_repo_data(data_root: Path, bundle: Dict[str, Any]) -> None:
+    data_root.mkdir(parents=True, exist_ok=True)
+    cleanup_web_data(data_root)
+    manifest = {
+        "repository": compact_repository(bundle["repository"]),
+        "issues": collection_manifest(sorted_by_number(bundle["issues"]), "issue"),
+        "pulls": collection_manifest(sorted_by_number(bundle["pulls"]), "pull"),
+        "detail_group_size": DETAIL_GROUP_SIZE,
+        "detail_pages": {
+            "issue": detail_page_index(sorted_by_number(bundle["issues"])),
+            "pull": detail_page_index(sorted_by_number(bundle["pulls"])),
+        },
+        "meta": bundle.get("meta", {}),
+    }
+    write_json(data_root / "web_manifest.json", manifest)
+
+    for kind, singular in (("issues", "issue"), ("pulls", "pull")):
+        items = sorted_by_number(bundle[kind])
+        summaries = [summary_item(item, singular, bundle) for item in items]
+        write_json(data_root / f"{kind}_basic.json", {"items": summaries})
+
+    for index, issues in enumerate(chunks(sorted_by_number(bundle["issues"]), DETAIL_GROUP_SIZE), start=1):
+        write_json(
+            data_root / f"issue_details_{index}.json",
+            {"items": [detail_item(issue, bundle, "issue") for issue in issues]},
+        )
+
+    for index, pulls in enumerate(chunks(sorted_by_number(bundle["pulls"]), DETAIL_GROUP_SIZE), start=1):
+        write_json(
+            data_root / f"pull_details_{index}.json",
+            {"items": [detail_item(pull, bundle, "pull") for pull in pulls]},
+        )
+
+
+def cleanup_web_data(data_root: Path) -> None:
+    patterns = (
+        "web_manifest.json",
+        "issues_basic.json",
+        "pulls_basic.json",
+        "issue_details_*.json",
+        "pull_details_*.json",
+    )
+    for pattern in patterns:
+        for path in data_root.glob(pattern):
+            path.unlink()
+
+
+def write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def detail_page_index(items: List[Dict[str, Any]]) -> Dict[str, int]:
+    return {
+        str(item["number"]): index // DETAIL_GROUP_SIZE + 1
+        for index, item in enumerate(items)
+    }
+
+
+def detail_item(item: Dict[str, Any], bundle: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    number = str(item["number"])
+    comments_key = "pull_comments" if kind == "pull" else "issue_comments"
+    review_comments: List[Dict[str, Any]] = []
+    if kind == "pull":
+        review_comments = [
+            comment
+            for comment in bundle.get("review_comments", [])
+            if comment.get("pull_request_url", "").endswith(f"/{number}")
+        ]
+    return {
+        "item": item,
+        "comments": bundle.get(comments_key, {}).get(number, []),
+        "review_comments": review_comments,
+    }
+
+
+def collection_manifest(items: List[Dict[str, Any]], singular: str) -> Dict[str, Any]:
+    open_count = sum(1 for item in items if item.get("state") == "open")
+    merged_count = sum(1 for item in items if singular == "pull" and item.get("merged_at"))
+    return {
+        "total": len(items),
+        "open": open_count,
+        "closed": len(items) - open_count,
+        "merged": merged_count,
+        "page_size": PAGE_SIZE,
+        "pages": {
+            "all": page_count(len(items)),
+            "open": page_count(open_count),
+            "closed": page_count(len(items) - open_count),
+        },
+    }
+
+
+def page_count(total: int) -> int:
+    return max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+
+
+def sorted_by_number(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(items, key=lambda item: item.get("number", 0), reverse=True)
+
+
+def compact_repository(repository: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "full_name",
+        "description",
+        "html_url",
+        "visibility",
+        "stargazers_count",
+        "forks_count",
+        "open_issues_count",
+        "default_branch",
+    )
+    return {key: repository.get(key) for key in keys}
+
+
+def summary_item(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "kind": kind,
+        "number": item.get("number"),
+        "title": item.get("title"),
+        "state": item.get("state"),
+        "merged_at": item.get("merged_at"),
+        "draft": item.get("draft", False),
+        "user": compact_user(item.get("user")),
+        "labels": [
+            {"name": label.get("name"), "color": label.get("color")}
+            for label in item.get("labels", [])
+        ],
+        "comments": comment_count(item, kind, bundle),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def comment_count(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> int:
+    number = str(item.get("number"))
+    issue_comment_total = len(bundle.get("pull_comments" if kind == "pull" else "issue_comments", {}).get(number, []))
+    if kind != "pull":
+        return issue_comment_total
+    review_total = sum(
+        1
+        for comment in bundle.get("review_comments", [])
+        if comment.get("pull_request_url", "").endswith(f"/{number}")
+    )
+    return issue_comment_total + review_total
+
+
+def compact_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    return {
+        "login": user.get("login", "ghost"),
+        "html_url": user.get("html_url", "#"),
+        "avatar_url": user.get("avatar_url", ""),
+    }
+
+
+def chunks(items: List[Any], size: int) -> Iterable[List[Any]]:
+    if not items:
+        return
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def write_page(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def render_index(items: List[Any]) -> str:
+    rows = []
+    for repo, bundle in items:
+        repository = bundle["repository"]
+        repo_path = f"repos/{repo.owner}/{repo.name}"
+        rows.append(
+            f"""
+            <article class="repo-card">
+              <div class="repo-card-header">
+                {octicon("repo")}
+                <a class="repo-name" href="{repo_path}/issues.html">{escape(repository.get("full_name", repo.full_name))}</a>
+                <span class="visibility">{escape(repository.get("visibility", "public"))}</span>
+              </div>
+              <p class="repo-description">{escape(repository.get("description") or "No description provided.")}</p>
+              <div class="repo-meta">
+                <span>{octicon("star")} {repository.get("stargazers_count", 0)}</span>
+                <span>{octicon("repo-forked")} {repository.get("forks_count", 0)}</span>
+                <span>{octicon("issue-opened")} {len(bundle["issues"])} issues</span>
+                <span>{octicon("git-pull-request")} {len(bundle["pulls"])} pull requests</span>
+              </div>
+              <div class="repo-actions">
+                <a class="btn" href="{repo_path}/issues.html">Issues</a>
+                <a class="btn" href="{repo_path}/pulls.html">Pull requests</a>
+              </div>
+            </article>
+            """
+        )
+    body = f"""
+      <main class="container">
+        <div class="pagehead">
+          <h1>local-github</h1>
+          <p class="muted">Static GitHub issue and pull request browser.</p>
+        </div>
+        <section class="repo-grid">
+          {''.join(rows) if rows else '<p class="muted">No repositories synced yet.</p>'}
+        </section>
+      </main>
+    """
+    return layout("Repositories", body, "")
+
+
+def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str) -> str:
+    repository = bundle["repository"]
+    is_pull = kind == "pulls"
+    title = "Pull requests" if is_pull else "Issues"
+    active = "pulls" if is_pull else "issues"
+    page_data = html.escape(
+        json.dumps(
+            {
+                "kind": kind,
+                "itemKind": "pull" if is_pull else "issue",
+                "dataRoot": f"../../../../data/github/{repo.owner}/{repo.name}",
+            }
+        ),
+        quote=True,
+    )
+    body = f"""
+      {repo_header(repo, repository, active)}
+      <main class="container app-shell" data-local-github-app="{page_data}">
+        <section data-route-view="list">
+          <div class="list-toolbar">
+            <div class="filter-input">is:{'pr' if is_pull else 'issue'} is:open</div>
+            <a class="btn btn-primary" href="{escape(repository.get("html_url", "#"))}/{'pulls' if is_pull else 'issues'}" target="_blank" rel="noreferrer">New {'pull request' if is_pull else 'issue'}</a>
+          </div>
+          <section class="issue-box">
+            <div class="issue-box-header">
+              <button class="tab-button" type="button" data-state-filter="all">All <span data-count="total">0</span></button>
+              <button class="tab-button active" type="button" data-state-filter="open">{octicon("issue-opened" if not is_pull else "git-pull-request")} Open <span data-count="open">0</span></button>
+              <button class="tab-button" type="button" data-state-filter="closed">{octicon("check")} Closed <span data-count="closed">0</span></button>
+            </div>
+            <div class="issue-list" data-list>
+              <div class="empty-state">Loading...</div>
+            </div>
+            <div class="pager" data-pager></div>
+          </section>
+        </section>
+        <section data-route-view="detail" hidden>
+          <div data-detail>
+            <div class="empty-state">Loading detail...</div>
+          </div>
+        </section>
+      </main>
+    """
+    return layout(f"{repo.full_name} {title}", body, "../../../")
+
+
+def repo_header(repo: Repository, repository: Dict[str, Any], active: str) -> str:
+    issues_active = "active" if active == "issues" else ""
+    pulls_active = "active" if active == "pulls" else ""
+    return f"""
+      <header class="repo-header">
+        <div class="container repo-title">
+          <a class="github-home-link" href="../../../index.html" aria-label="local-github home">{octicon("repo")}</a>
+          <span class="repo-full-name">
+            <span class="repo-owner">{escape(repo.owner)}</span>
+            <span class="repo-separator">/</span>
+            <span class="repo-name-part">{escape(repo.name)}</span>
+          </span>
+          <span class="visibility">{escape(repository.get("visibility", "public"))}</span>
+        </div>
+        <nav class="container tabs">
+          <a class="tab {issues_active}" href="issues.html">{octicon("issue-opened")} Issues</a>
+          <a class="tab {pulls_active}" href="pulls.html">{octicon("git-pull-request")} Pull requests</a>
+        </nav>
+      </header>
+    """
+
+
+def layout(title: str, body: str, root_prefix: str) -> str:
+    css = f"{root_prefix}css/github.css"
+    js = f"{root_prefix}js/app.js"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <link rel="icon" type="image/svg+xml" href="{GITHUB_FAVICON}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github.min.css">
+  <link rel="stylesheet" href="{css}">
+</head>
+<body>
+  {body}
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/common.min.js"></script>
+  <script src="{js}"></script>
+</body>
+</html>
+"""
+
+
+def escape(value: Any) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def octicon(name: str) -> str:
+    if name == "repo":
+        return (
+            '<svg class="octicon octicon-mark-github" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'
+            f'<path d="{GITHUB_MARK_PATH}"></path>'
+            "</svg>"
+        )
+    if name == "issue-closed":
+        return (
+            '<svg class="octicon octicon-issue-closed" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">'
+            '<circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5"></circle>'
+            '<path fill="currentColor" d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"></path>'
+            "</svg>"
+        )
+    paths = {
+        "star": "M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z",
+        "repo-forked": "M5 5.25a2.25 2.25 0 1 1-3 2.122V13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7.372a2.25 2.25 0 1 1 1.5 0V13A2.5 2.5 0 0 1 13 15.5H3A2.5 2.5 0 0 1 .5 13V7.372a2.25 2.25 0 1 1 1.5 0V13a1 1 0 0 0 1 1h2V5.25Zm3-3a2.25 2.25 0 1 1-3 2.122V7.5h6V4.372A2.25 2.25 0 0 1 8 2.25Z",
+        "issue-opened": "M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z",
+        "git-pull-request": "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm9.5-.75h1.25A2.75 2.75 0 0 1 15 5.25v5.378a2.25 2.25 0 1 1-1.5 0V5.25c0-.69-.56-1.25-1.25-1.25H11v1.75a.25.25 0 0 1-.427.177L7.823 3.177a.25.25 0 0 1 0-.354l2.75-2.75A.25.25 0 0 1 11 .25V2.5Z",
+        "check": "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z",
+    }
+    path = paths.get(name, paths["issue-opened"])
+    return f'<svg class="octicon octicon-{name}" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="{path}"></path></svg>'

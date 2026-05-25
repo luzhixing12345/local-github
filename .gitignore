@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+data
+.github-token
+.github-id
+.codex
+/issue*
+/pr*
+docs/
+GOAL.md

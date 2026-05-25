@@ -1,0 +1,20 @@
+[project]
+name = "local_github"
+version = "0.1.1"
+description = "本地快速浏览 Github issue/pr，查看新增 comment/issue/pr/response"
+authors = [
+    {name = "luzhixing12345",email = "luzhixing12345@163.com"}
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+local-github = 'local_github.main:main'
