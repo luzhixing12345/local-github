@@ -322,6 +322,34 @@
       });
     }
     installCodeCopy(root);
+    installImageLinks(root);
+  }
+
+  function installImageLinks(root) {
+    root.querySelectorAll(".markdown-body img").forEach((image) => {
+      if (image.dataset.imageLinkBound === "true") return;
+      image.dataset.imageLinkBound = "true";
+      image.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openImageUrl(image.currentSrc || image.src);
+      });
+    });
+    root.querySelectorAll(".markdown-body a").forEach((anchor) => {
+      const image = anchor.querySelector("img");
+      if (!image || anchor.dataset.imageLinkBound === "true") return;
+      anchor.dataset.imageLinkBound = "true";
+      anchor.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openImageUrl(image.currentSrc || image.src || anchor.href);
+      });
+    });
+  }
+
+  function openImageUrl(src) {
+    if (!src) return;
+    window.open(src, "_blank", "noopener,noreferrer");
   }
 
   function installCodeCopy(root) {

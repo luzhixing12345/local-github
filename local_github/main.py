@@ -106,7 +106,11 @@ def sync_repositories(repos: List[Repository]) -> None:
         print("  [7/7] Writing sync metadata ...")
         meta_path = save_stage(repo, "meta.json", {"synced_at": current_utc_timestamp()})
         print(f"        Saved meta.json -> {meta_path}")
-        print(f"Done {repo.full_name}: {len(issues)} issues, {len(pulls)} pull requests -> {repo_path.parent}")
+        print(f"Fetch Data Done {repo.full_name}: {len(issues)} issues, {len(pulls)} pull requests -> {repo_path.parent}")
+        
+        print("-" * 80)
+        print("Run `local-github build` to generate static HTML from the fetched data.")
+        
 
 
 def current_utc_timestamp() -> str:
@@ -120,7 +124,7 @@ def comment_progress(label: str):
         if total == 0:
             return
         if index == 1 or index == total or index % 10 == 0:
-            print(f"        Comments for {label}: {index}/{total} items processed, latest item has {count} comments")
+            print(f"        Comments for {label}: {index}/{total} items processed")
 
     return report
 

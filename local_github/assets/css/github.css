@@ -510,6 +510,14 @@ h1 {
   color: var(--accent);
 }
 
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-style: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 .markdown-body table {
   display: block;
   width: max-content;
