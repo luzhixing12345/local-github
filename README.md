@@ -36,3 +36,22 @@ docs/index.html
 python -m local_github.main sync luzhixing12345/zood
 python -m local_github.main build
 ```
+
+## Shell completion
+
+`pip install local_github` 会安装 bash / zsh 补全脚本到当前 Python prefix 的标准目录：
+
+- `share/bash-completion/completions/local-github`
+- `share/zsh/site-functions/_local-github`
+
+补全脚本会从当前目录向上查找 `docs/repos/<owner>/<repo>`，输入下面命令后按 `Tab` 可以补全本地已有仓库：
+
+```bash
+local-github sync <Tab>
+```
+
+如果 `docs/` 不在当前项目目录下，可以指定：
+
+```bash
+export LOCAL_GITHUB_DOCS_REPOS=/path/to/docs/repos
+```

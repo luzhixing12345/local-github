@@ -518,6 +518,17 @@ h1 {
   background: var(--bg);
 }
 
+.avatar-link {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.avatar-link:hover {
+  text-decoration: none;
+}
+
 .comment {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -540,6 +551,14 @@ h1 {
 .comment-header strong {
   color: #1f2328;
   font-weight: 600;
+}
+
+.comment-author {
+  color: #1f2328;
+}
+
+.comment-author:hover {
+  color: var(--accent);
 }
 
 .comment-jump-link {
@@ -1050,7 +1069,8 @@ h1 {
   .pr-file-list { position: static; }
   .timeline-item { grid-template-columns: 1fr; }
   .timeline::before { display: none; }
-  .avatar { display: none; }
+  .avatar,
+  .avatar-link { display: none; }
   h1 { font-size: 24px; }
   .issue-info-title { font-size: 24px; }
 }

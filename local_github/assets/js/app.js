@@ -491,12 +491,16 @@
   function renderTimelineItem(item, action) {
     const user = item.user || {};
     const commentId = item.id ? ` id="comment-${escapeAttr(item.id)}"` : "";
+    const profileUrl = userProfileUrl(user);
+    const login = escapeHtml(user.login || "ghost");
     return `
       <article class="timeline-item"${commentId}>
-        <img class="avatar" src="${escapeAttr(user.avatar_url || "")}" alt="">
+        <a class="avatar-link" href="${escapeAttr(profileUrl)}" target="_blank" rel="noreferrer" aria-label="${login}">
+          <img class="avatar" src="${escapeAttr(user.avatar_url || "")}" alt="">
+        </a>
         <div class="comment">
           <div class="comment-header">
-            <strong>${escapeHtml(user.login || "ghost")}</strong>
+            <strong><a class="comment-author" href="${escapeAttr(profileUrl)}" target="_blank" rel="noreferrer">${login}</a></strong>
             <span>${escapeHtml(action)} ${formatTime(item.created_at)}</span>
           </div>
           <div class="markdown-body">${markdown(item.body || "") || '<p class="muted">No description provided.</p>'}</div>
@@ -735,7 +739,13 @@
 
   function userLink(user) {
     if (!user) return "ghost";
-    return `<a class="user-link" href="${escapeAttr(user.html_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(user.login || "ghost")}</a>`;
+    return `<a class="user-link" href="${escapeAttr(userProfileUrl(user))}" target="_blank" rel="noreferrer">${escapeHtml(user.login || "ghost")}</a>`;
+  }
+
+  function userProfileUrl(user) {
+    if (user && user.html_url) return user.html_url;
+    if (user && user.login && user.login !== "ghost") return `https://github.com/${user.login}`;
+    return "https://github.com";
   }
 
   function pageFromHash() {

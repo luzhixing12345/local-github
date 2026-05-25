@@ -372,7 +372,7 @@ def news_issue_rows(numbers: List[int], bundle: Dict[str, Any], kind: str) -> st
                   <a class="issue-title" href="{page}#/{kind}/{number}">{escape(item.get("title", ""))}</a>
                   {labels}
                 </div>
-                <div class="issue-meta">#{number} {escape(status['label'].lower())} by {static_user_link(item.get("user"))} · updated {format_date(item.get("updated_at"))}</div>
+                <div class="issue-meta">#{number} {escape(status['label'].lower())} by {static_user_link(item.get("user"))} · updated {format_relative_time(item.get("updated_at"))}</div>
               </div>
               <div class="comment-count">{octicon("comment")} {comment_count(item, kind, bundle)}</div>
             </article>
@@ -406,17 +406,21 @@ def comment_news_rows(comments: List[Dict[str, Any]]) -> str:
         number = int(comment.get("number", 0))
         page = "pulls.html" if kind == "pull" else "issues.html"
         user = comment.get("user") or {}
+        user_href = user_profile_url(user)
+        user_login = escape(user.get("login", "ghost"))
         comment_id = comment.get("comment_id")
         comment_href = f"{page}#/{kind}/{number}/comment-{comment_id}" if comment_id else f"{page}#/{kind}/{number}"
         jump_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:1;"><path fill="none" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
         rows.append(
             f"""
             <article class="timeline-item news-comment-item">
-              <img class="avatar" src="{escape(user.get("avatar_url", ""))}" alt="">
+              <a class="avatar-link" href="{escape(user_href)}" target="_blank" rel="noreferrer" aria-label="{user_login}">
+                <img class="avatar" src="{escape(user.get("avatar_url", ""))}" alt="">
+              </a>
               <div class="comment">
                 <div class="comment-header">
-                  <strong>{escape(user.get("login", "ghost"))}</strong>
-                  <span>commented on <a href="{page}#/{kind}/{number}">#{number}</a> {format_date(comment.get("created_at"))}</span>
+                  <strong><a class="comment-author" href="{escape(user_href)}" target="_blank" rel="noreferrer">{user_login}</a></strong>
+                  <span>commented on <a href="{page}#/{kind}/{number}">#{number}</a> {format_relative_time(comment.get("created_at"))}</span>
                   <a class="comment-jump-link" href="{comment_href}" aria-label="Open comment">{jump_icon}</a>
                 </div>
                 <div class="markdown-body">{escape(comment.get("body") or "")}</div>
@@ -459,6 +463,41 @@ def format_datetime(value: Any) -> str:
         return escape(text)
 
 
+def format_relative_time(value: Any) -> str:
+    if not value:
+        return "unknown"
+    text = str(value)
+    try:
+        from datetime import datetime, timezone
+
+        date = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+        now = datetime.now(timezone.utc)
+        diff_seconds = max(0, int((now - date).total_seconds()))
+        minute = 60
+        hour = 60 * minute
+        day = 24 * hour
+
+        if diff_seconds < minute:
+            return "just now"
+        if diff_seconds < hour:
+            minutes = diff_seconds // minute
+            return f"{minutes} {'minute' if minutes == 1 else 'minutes'} ago"
+        if diff_seconds < day:
+            hours = diff_seconds // hour
+            return f"{hours} {'hour' if hours == 1 else 'hours'} ago"
+        if diff_seconds < 2 * day:
+            return "yesterday"
+        if diff_seconds < 7 * day:
+            return f"{diff_seconds // day} days ago"
+        if diff_seconds < 14 * day:
+            return "last week"
+        if diff_seconds < 30 * day:
+            return f"{diff_seconds // day} days ago"
+        return format_date(value)
+    except ValueError:
+        return escape(text)
+
+
 def static_status_for(item: Dict[str, Any], kind: str) -> Dict[str, str]:
     if kind == "pull" and item.get("merged_at"):
         return {"class_name": "merged", "icon": "git-merge", "label": "Merged"}
@@ -470,9 +509,17 @@ def static_status_for(item: Dict[str, Any], kind: str) -> Dict[str, str]:
 def static_user_link(user: Dict[str, Any]) -> str:
     user = user or {}
     return (
-        f'<a class="user-link" href="{escape(user.get("html_url", "#"))}" target="_blank" rel="noreferrer">'
+        f'<a class="user-link" href="{escape(user_profile_url(user))}" target="_blank" rel="noreferrer">'
         f'{escape(user.get("login", "ghost"))}</a>'
     )
+
+
+def user_profile_url(user: Dict[str, Any]) -> str:
+    if user.get("html_url"):
+        return str(user["html_url"])
+    if user.get("login") and user.get("login") != "ghost":
+        return f"https://github.com/{user['login']}"
+    return "https://github.com"
 
 
 def repo_header(repo: Repository, repository: Dict[str, Any], active: str, news_total: int = 0) -> str:

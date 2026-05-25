@@ -1,0 +1,55 @@
+#compdef local-github
+
+_local_github_find_docs_repos() {
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -d "$dir/docs/repos" ]]; then
+      print -r -- "$dir/docs/repos"
+      return
+    fi
+    dir="${dir:h}"
+  done
+
+  if [[ -n "${LOCAL_GITHUB_DOCS_REPOS:-}" && -d "$LOCAL_GITHUB_DOCS_REPOS" ]]; then
+    print -r -- "$LOCAL_GITHUB_DOCS_REPOS"
+  elif [[ -n "${LOCAL_GITHUB_DOCS_ROOT:-}" && -d "$LOCAL_GITHUB_DOCS_ROOT/repos" ]]; then
+    print -r -- "$LOCAL_GITHUB_DOCS_ROOT/repos"
+  elif [[ -d "$PWD/docs/repos" ]]; then
+    print -r -- "$PWD/docs/repos"
+  fi
+}
+
+_local_github_repo_names() {
+  local repos_root owner repo
+  repos_root="$(_local_github_find_docs_repos)"
+  [[ -n "$repos_root" && -d "$repos_root" ]] || return
+
+  for owner in "$repos_root"/*(/N); do
+    for repo in "$owner"/*(/N); do
+      print -r -- "${owner:t}/${repo:t}"
+    done
+  done
+}
+
+_local_github() {
+  local -a commands repos
+  commands=(
+    'sync:Fetch repository data into data/github'
+    'build:Generate docs from local data'
+    'all:Fetch data and generate docs'
+  )
+  repos=("${(@f)$(_local_github_repo_names)}")
+
+  if (( CURRENT == 2 )); then
+    _describe -t commands 'local-github command' commands
+    return
+  fi
+
+  case "$words[2]" in
+    sync|build|all)
+      _describe -t repositories 'repository' repos
+      ;;
+  esac
+}
+
+_local_github "$@"

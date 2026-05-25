@@ -1,20 +1,33 @@
 [project]
 name = "local_github"
-version = "0.1.1"
+version = "0.1.2"
 description = "本地快速浏览 Github issue/pr，查看新增 comment/issue/pr/response"
 authors = [
     {name = "luzhixing12345",email = "luzhixing12345@163.com"}
 ]
-license = "MIT"
+license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies = [
 ]
 
+[project.scripts]
+local-github = "local_github.main:main"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry.scripts]
-local-github = 'local_github.main:main'
+[tool.setuptools.packages.find]
+include = ["local_github*"]
+
+[tool.setuptools.package-data]
+local_github = [
+    "assets/css/*.css",
+    "assets/js/*.js",
+    "completions/*",
+]
+
+[tool.setuptools.data-files]
+"share/bash-completion/completions" = ["local_github/completions/local-github"]
+"share/zsh/site-functions" = ["local_github/completions/_local-github"]
