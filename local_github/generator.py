@@ -39,6 +39,7 @@ def build_site(repos: Iterable[Repository], docs_root: Path = DOCS_ROOT) -> None
         write_repo_data(repo_data_dir(repo), bundle)
         write_page(repo_root / "issues.html", render_collection_shell(repo, bundle, "issues"))
         write_page(repo_root / "pulls.html", render_collection_shell(repo, bundle, "pulls"))
+        write_page(repo_root / "news.html", render_news_shell(repo, bundle))
 
 
 def copy_assets(docs_root: Path) -> None:
@@ -58,6 +59,7 @@ def write_repo_data(data_root: Path, bundle: Dict[str, Any]) -> None:
         "repository": compact_repository(bundle["repository"]),
         "issues": collection_manifest(sorted_by_number(bundle["issues"]), "issue"),
         "pulls": collection_manifest(sorted_by_number(bundle["pulls"]), "pull"),
+        "news": {"total": bundle.get("news", {}).get("total", 0)},
         "detail_group_size": DETAIL_GROUP_SIZE,
         "detail_pages": {
             "issue": detail_page_index(sorted_by_number(bundle["issues"])),
@@ -123,6 +125,7 @@ def detail_item(item: Dict[str, Any], bundle: Dict[str, Any], kind: str) -> Dict
         "item": item,
         "comments": bundle.get(comments_key, {}).get(number, []),
         "review_comments": review_comments,
+        "files": bundle.get("pull_files", {}).get(number, []) if kind == "pull" else [],
     }
 
 
@@ -151,6 +154,10 @@ def sorted_by_number(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(items, key=lambda item: item.get("number", 0), reverse=True)
 
 
+def by_number(items: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    return {int(item["number"]): item for item in items}
+
+
 def compact_repository(repository: Dict[str, Any]) -> Dict[str, Any]:
     keys = (
         "full_name",
@@ -166,6 +173,8 @@ def compact_repository(repository: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def summary_item(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> Dict[str, Any]:
+    news = bundle.get("news", {})
+    new_numbers_key = "new_pull_numbers" if kind == "pull" else "new_issue_numbers"
     return {
         "kind": kind,
         "number": item.get("number"),
@@ -181,6 +190,7 @@ def summary_item(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> Dic
         "comments": comment_count(item, kind, bundle),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
+        "is_new": item.get("number") in news.get(new_numbers_key, []),
     }
 
 
@@ -275,7 +285,7 @@ def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str)
         quote=True,
     )
     body = f"""
-      {repo_header(repo, repository, active)}
+      {repo_header(repo, repository, active, bundle.get("news", {}).get("total", 0))}
       <main class="container app-shell" data-local-github-app="{page_data}">
         <section data-route-view="list">
           <div class="list-toolbar">
@@ -304,9 +314,171 @@ def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str)
     return layout(f"{repo.full_name} {title}", body, "../../../")
 
 
-def repo_header(repo: Repository, repository: Dict[str, Any], active: str) -> str:
+def render_news_shell(repo: Repository, bundle: Dict[str, Any]) -> str:
+    news = bundle.get("news", {})
+    repository = bundle["repository"]
+    sections = [
+        render_news_section("New issues", news_issue_rows(news.get("new_issue_numbers", []), bundle, "issue")),
+        render_news_section("New pull requests", news_issue_rows(news.get("new_pull_numbers", []), bundle, "pull")),
+        render_news_section("Status changes", status_change_rows(news.get("issue_status_changes", []) + news.get("pull_status_changes", []))),
+        render_news_section("New comments", comment_news_rows(news.get("new_issue_comments", []) + news.get("new_pull_comments", []) + news.get("new_review_comments", []))),
+    ]
+    body_content = "".join(section for section in sections if section)
+    body = f"""
+      {repo_header(repo, repository, "news", news.get("total", 0))}
+      <main class="container app-shell">
+        <div class="news-head">
+          <h1>News</h1>
+          <p class="muted">Updates from the latest sync{news_since_text(news.get("since"))}.</p>
+        </div>
+        <section class="news-box">
+          {body_content}
+        </section>
+      </main>
+    """
+    return layout(f"{repo.full_name} News", body, "../../../")
+
+
+def render_news_section(title: str, rows: str) -> str:
+    if not rows:
+        return ""
+    return f"""
+      <section class="news-section">
+        <h2>{escape(title)}</h2>
+        <div class="news-list">{rows}</div>
+      </section>
+    """
+
+
+def news_issue_rows(numbers: List[int], bundle: Dict[str, Any], kind: str) -> str:
+    source = by_number(bundle["pulls" if kind == "pull" else "issues"])
+    rows = []
+    for number in numbers:
+        item = source.get(int(number))
+        if not item:
+            continue
+        page = "pulls.html" if kind == "pull" else "issues.html"
+        status = static_status_for(item, kind)
+        labels = "".join(
+            f'<span class="label" style="background-color:#{escape(label.get("color", "d0d7de"))}">{escape(label.get("name", "label"))}</span>'
+            for label in item.get("labels", [])
+        )
+        rows.append(
+            f"""
+            <article class="issue-row">
+              <div class="issue-icon {status['class_name']}">{octicon(status['icon'])}</div>
+              <div class="issue-main">
+                <div class="issue-title-line">
+                  <a class="issue-title" href="{page}#/{kind}/{number}">{escape(item.get("title", ""))}</a>
+                  {labels}
+                </div>
+                <div class="issue-meta">#{number} {escape(status['label'].lower())} by {static_user_link(item.get("user"))} · updated {format_date(item.get("updated_at"))}</div>
+              </div>
+              <div class="comment-count">{octicon("comment")} {comment_count(item, kind, bundle)}</div>
+            </article>
+            """
+        )
+    return "".join(rows)
+
+
+def status_change_rows(changes: List[Dict[str, Any]]) -> str:
+    rows = []
+    for change in changes:
+        page = "pulls.html" if change.get("kind") == "pull" else "issues.html"
+        kind = escape(change.get("kind", "issue"))
+        number = int(change.get("number", 0))
+        rows.append(
+            f"""
+            <article class="news-row">
+              <span class="news-kind">{kind}</span>
+              <a class="issue-title" href="{page}#/{kind}/{number}">{escape(change.get("title", ""))}</a>
+              <span class="muted">#{number} changed from {escape(change.get("from", ""))} to {escape(change.get("to", ""))}</span>
+            </article>
+            """
+        )
+    return "".join(rows)
+
+
+def comment_news_rows(comments: List[Dict[str, Any]]) -> str:
+    rows = []
+    for comment in sorted(comments, key=lambda item: item.get("created_at") or "", reverse=True):
+        kind = comment.get("kind", "issue")
+        number = int(comment.get("number", 0))
+        page = "pulls.html" if kind == "pull" else "issues.html"
+        user = comment.get("user") or {}
+        comment_id = comment.get("comment_id")
+        comment_href = f"{page}#/{kind}/{number}/comment-{comment_id}" if comment_id else f"{page}#/{kind}/{number}"
+        jump_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:1;"><path fill="none" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+        rows.append(
+            f"""
+            <article class="timeline-item news-comment-item">
+              <img class="avatar" src="{escape(user.get("avatar_url", ""))}" alt="">
+              <div class="comment">
+                <div class="comment-header">
+                  <strong>{escape(user.get("login", "ghost"))}</strong>
+                  <span>commented on <a href="{page}#/{kind}/{number}">#{number}</a> {format_date(comment.get("created_at"))}</span>
+                  <a class="comment-jump-link" href="{comment_href}" aria-label="Open comment">{jump_icon}</a>
+                </div>
+                <div class="markdown-body">{escape(comment.get("body") or "")}</div>
+              </div>
+            </article>
+            """
+        )
+    return "".join(rows)
+
+
+def news_since_text(value: Any) -> str:
+    if not value:
+        return ""
+    return f" since {format_datetime(value)}"
+
+
+def format_date(value: Any) -> str:
+    if not value:
+        return "unknown"
+    text = str(value)
+    try:
+        from datetime import datetime, timezone
+
+        date = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return f"on {date.strftime('%b')} {date.day}, {date.year}"
+    except ValueError:
+        return escape(text)
+
+
+def format_datetime(value: Any) -> str:
+    if not value:
+        return "unknown"
+    text = str(value)
+    try:
+        from datetime import datetime, timezone
+
+        date = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return f"on {date.strftime('%b')} {date.day}, {date.year} {date.strftime('%H:%M')} UTC"
+    except ValueError:
+        return escape(text)
+
+
+def static_status_for(item: Dict[str, Any], kind: str) -> Dict[str, str]:
+    if kind == "pull" and item.get("merged_at"):
+        return {"class_name": "merged", "icon": "git-merge", "label": "Merged"}
+    if item.get("state") == "closed":
+        return {"class_name": "closed", "icon": "issue-closed", "label": "Closed"}
+    return {"class_name": "open", "icon": "git-pull-request" if kind == "pull" else "issue-opened", "label": "Open"}
+
+
+def static_user_link(user: Dict[str, Any]) -> str:
+    user = user or {}
+    return (
+        f'<a class="user-link" href="{escape(user.get("html_url", "#"))}" target="_blank" rel="noreferrer">'
+        f'{escape(user.get("login", "ghost"))}</a>'
+    )
+
+
+def repo_header(repo: Repository, repository: Dict[str, Any], active: str, news_total: int = 0) -> str:
     issues_active = "active" if active == "issues" else ""
     pulls_active = "active" if active == "pulls" else ""
+    news_active = "active" if active == "news" else ""
     return f"""
       <header class="repo-header">
         <div class="container repo-title">
@@ -321,6 +493,7 @@ def repo_header(repo: Repository, repository: Dict[str, Any], active: str) -> st
         <nav class="container tabs">
           <a class="tab {issues_active}" href="issues.html">{octicon("issue-opened")} Issues</a>
           <a class="tab {pulls_active}" href="pulls.html">{octicon("git-pull-request")} Pull requests</a>
+          <a class="tab {news_active}" href="news.html">{octicon("comment")} News <span class="tab-counter">{news_total}</span></a>
         </nav>
       </header>
     """
@@ -374,6 +547,8 @@ def octicon(name: str) -> str:
         "issue-opened": "M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z",
         "git-pull-request": "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm9.5-.75h1.25A2.75 2.75 0 0 1 15 5.25v5.378a2.25 2.25 0 1 1-1.5 0V5.25c0-.69-.56-1.25-1.25-1.25H11v1.75a.25.25 0 0 1-.427.177L7.823 3.177a.25.25 0 0 1 0-.354l2.75-2.75A.25.25 0 0 1 11 .25V2.5Z",
         "check": "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z",
+        "comment": "M1.75 2.5h12.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H6.5a.75.75 0 0 0-.53.22L3.5 14.19v-1.94a.75.75 0 0 0-.75-.75h-1a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25ZM14.25 1H1.75A1.75 1.75 0 0 0 0 2.75v8.5C0 12.216.784 13 1.75 13H2v2.543a.457.457 0 0 0 .78.323L6.646 13h7.604A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1Z",
+        "link": "M7.775 3.275a.75.75 0 0 0-1.06-1.06L3.19 5.74a3.75 3.75 0 0 0 0 5.303.75.75 0 0 0 1.06-1.061 2.25 2.25 0 0 1 0-3.182l3.525-3.525Zm.45 9.45a.75.75 0 0 0 1.06 1.06l3.525-3.525a3.75 3.75 0 0 0 0-5.303.75.75 0 1 0-1.06 1.061 2.25 2.25 0 0 1 0 3.182l-3.525 3.525Zm1.323-6.273a.75.75 0 0 0-1.06 0L5.95 8.99a.75.75 0 1 0 1.06 1.061l2.538-2.538a.75.75 0 0 0 0-1.06Z",
     }
     path = paths.get(name, paths["issue-opened"])
     return f'<svg class="octicon octicon-{name}" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="{path}"></path></svg>'

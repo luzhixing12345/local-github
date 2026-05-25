@@ -93,6 +93,7 @@ class GitHubClient:
         issue_comments = self.fetch_issue_comments(repo, issues)
         pull_comments = self.fetch_issue_comments(repo, pulls)
         review_comments = self.fetch_review_comments(repo)
+        pull_files = self.fetch_pull_files(repo, pulls)
 
         return {
             "repository": repo_json,
@@ -101,6 +102,7 @@ class GitHubClient:
             "issue_comments": issue_comments,
             "pull_comments": pull_comments,
             "review_comments": review_comments,
+            "pull_files": pull_files,
             "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
@@ -108,11 +110,27 @@ class GitHubClient:
         return self.get_json(f"/repos/{repo.full_name}")
 
     def fetch_issues(self, repo: Repository) -> List[Dict[str, Any]]:
+        return self.fetch_issue_events(repo, include_pulls=False)
+
+    def fetch_issue_events(
+        self,
+        repo: Repository,
+        *,
+        since: Optional[str] = None,
+        include_pulls: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        params = {"state": "all", "sort": "updated", "direction": "desc"}
+        if since:
+            params["since"] = since
         all_issues = self.get_paginated(
             f"/repos/{repo.full_name}/issues",
-            {"state": "all", "sort": "updated", "direction": "desc"},
+            params,
         )
-        return [item for item in all_issues if "pull_request" not in item]
+        if include_pulls is True:
+            return [item for item in all_issues if "pull_request" in item]
+        if include_pulls is False:
+            return [item for item in all_issues if "pull_request" not in item]
+        return all_issues
 
     def fetch_pulls(self, repo: Repository) -> List[Dict[str, Any]]:
         return self.get_paginated(
@@ -120,11 +138,33 @@ class GitHubClient:
             {"state": "all", "sort": "updated", "direction": "desc"},
         )
 
+    def fetch_pull(self, repo: Repository, number: int) -> Dict[str, Any]:
+        return self.get_json(f"/repos/{repo.full_name}/pulls/{number}")
+
     def fetch_review_comments(self, repo: Repository) -> List[Dict[str, Any]]:
         return self.get_paginated(
             f"/repos/{repo.full_name}/pulls/comments",
             {"sort": "updated", "direction": "desc"},
         )
+
+    def fetch_pull_review_comments(self, repo: Repository, number: int) -> List[Dict[str, Any]]:
+        return self.get_paginated(f"/repos/{repo.full_name}/pulls/{number}/comments")
+
+    def fetch_pull_files(
+        self,
+        repo: Repository,
+        pulls: Iterable[Dict[str, Any]],
+        progress: Optional[Callable[[int, int, int], None]] = None,
+    ) -> Dict[str, List[Any]]:
+        pull_list = list(pulls)
+        files: Dict[str, List[Any]] = {}
+        total = len(pull_list)
+        for index, pull in enumerate(pull_list, start=1):
+            number = str(pull["number"])
+            files[number] = self.get_paginated(f"/repos/{repo.full_name}/pulls/{number}/files")
+            if progress:
+                progress(index, total, len(files[number]))
+        return files
 
     def fetch_issue_comments(
         self,

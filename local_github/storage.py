@@ -26,6 +26,8 @@ def save_bundle(repo: Repository, bundle: Dict[str, Any], data_root: Path = DATA
         "issue_comments.json": bundle["issue_comments"],
         "pull_comments.json": bundle["pull_comments"],
         "review_comments.json": bundle["review_comments"],
+        "pull_files.json": bundle.get("pull_files", {}),
+        "news.json": bundle.get("news", {}),
         "meta.json": {"synced_at": bundle["synced_at"]},
     }
     for name, payload in files.items():
@@ -50,6 +52,8 @@ def load_bundle(repo: Repository, data_root: Path = DATA_ROOT) -> Dict[str, Any]
         "issue_comments": read_json(source / "issue_comments.json"),
         "pull_comments": read_json(source / "pull_comments.json"),
         "review_comments": read_json(source / "review_comments.json"),
+        "pull_files": read_optional_json(source / "pull_files.json", {}),
+        "news": read_optional_json(source / "news.json", {}),
         "meta": read_json(source / "meta.json"),
     }
 
@@ -74,3 +78,9 @@ def write_json(path: Path, payload: Any) -> None:
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_optional_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    return read_json(path)
