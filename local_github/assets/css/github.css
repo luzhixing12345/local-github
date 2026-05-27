@@ -330,9 +330,17 @@ h1 {
   padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--text);
   background: var(--subtle);
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 14px;
+  outline: none;
+}
+
+.filter-input:focus {
+  border-color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.14);
 }
 
 .issue-box {
@@ -380,6 +388,7 @@ h1 {
 
 .issue-icon.open { color: var(--open); }
 .issue-icon.closed { color: var(--closed); }
+.issue-icon.closed .octicon-git-pull-request-closed { color: #d1242f; }
 .issue-icon.merged { color: var(--merged); }
 
 .issue-title-line {
@@ -472,6 +481,17 @@ h1 {
   flex-wrap: wrap;
   margin-top: 8px;
   color: var(--muted);
+}
+
+.issue-source-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.issue-source-link:hover {
+  color: var(--accent);
+  text-decoration: none;
 }
 
 .branch-line {

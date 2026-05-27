@@ -8,8 +8,10 @@
       "M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Z",
     "git-pull-request":
       "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm9.5-.75h1.25A2.75 2.75 0 0 1 15 5.25v5.378a2.25 2.25 0 1 1-1.5 0V5.25c0-.69-.56-1.25-1.25-1.25H11v1.75a.25.25 0 0 1-.427.177L7.823 3.177a.25.25 0 0 1 0-.354l2.75-2.75A.25.25 0 0 1 11 .25V2.5Z",
+    "git-pull-request-closed":
+      "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z",
     "git-merge":
-      "M5 3.25a2.25 2.25 0 1 1-3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 5 3.25Zm5.28 1.47a.75.75 0 0 0-1.06 1.06l1.97 1.97H9.75A4.75 4.75 0 0 0 5 12.5v.128a2.251 2.251 0 0 1 1.5 0V12.5a3.25 3.25 0 0 1 3.25-3.25h1.44l-1.97 1.97a.75.75 0 1 0 1.06 1.06l3.25-3.25a.75.75 0 0 0 0-1.06L10.28 4.72Z",
+      "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
     comment:
       "M1.75 2.5h12.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H6.5a.75.75 0 0 0-.53.22L3.5 14.19v-1.94a.75.75 0 0 0-.75-.75h-1a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25ZM14.25 1H1.75A1.75 1.75 0 0 0 0 2.75v8.5C0 12.216.784 13 1.75 13H2v2.543a.457.457 0 0 0 .78.323L6.646 13h7.604A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1Z",
     "file-diff":
@@ -50,12 +52,13 @@
 
   config = JSON.parse(shell.dataset.localGithubApp);
   window.LocalGithubData.root = config.dataRoot;
-  const state = { page: 1, filter: "open", manifest: null, basic: null, items: [] };
+  const state = { page: 1, filter: "open", query: "", manifest: null, basic: null, items: [] };
   const listView = shell.querySelector("[data-route-view='list']");
   const detailView = shell.querySelector("[data-route-view='detail']");
   const list = shell.querySelector("[data-list]");
   const detail = shell.querySelector("[data-detail]");
   const pager = shell.querySelector("[data-pager]");
+  const searchInput = shell.querySelector("[data-search-input]");
 
   init().catch((error) => {
     list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -65,6 +68,7 @@
     state.manifest = await window.LocalGithubData.load("web_manifest");
     updateCounts();
     bindFilters();
+    bindSearch();
     window.addEventListener("hashchange", route);
     await route();
   }
@@ -91,6 +95,14 @@
     });
   }
 
+  function bindSearch() {
+    if (!searchInput) return;
+    searchInput.addEventListener("input", async () => {
+      state.query = searchInput.value.trim().toLowerCase();
+      await loadPage(1);
+    });
+  }
+
   function updateCounts() {
     const counts = state.manifest[config.kind];
     shell.querySelector("[data-count='total']").textContent = counts.total;
@@ -104,9 +116,12 @@
       const basic = await window.LocalGithubData.load(`${config.kind}_basic`);
       state.basic = basic.items || [];
     }
-    const filtered = state.filter === "all"
+    const stateFiltered = state.filter === "all"
       ? state.basic
       : state.basic.filter((item) => item.state === state.filter);
+    const filtered = state.query
+      ? stateFiltered.filter((item) => matchesSearch(item, state.query))
+      : stateFiltered;
     const pages = Math.max(1, Math.ceil(filtered.length / info.page_size));
     state.page = Math.min(Math.max(page, 1), pages);
     list.innerHTML = '<div class="empty-state">Loading...</div>';
@@ -117,6 +132,23 @@
     if (options.updateHash !== false) {
       history.replaceState(null, "", `#page-${state.page}`);
     }
+  }
+
+  function matchesSearch(item, query) {
+    const labels = (item.labels || []).map((label) => label.name || "").join(" ");
+    const user = item.user || {};
+    const haystack = [
+      item.title || "",
+      item.number ? `#${item.number}` : "",
+      item.number || "",
+      item.state || "",
+      item.kind || "",
+      user.login || "",
+      labels,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query);
   }
 
   function renderList() {
@@ -221,23 +253,25 @@
     const labels = item.labels || [];
     const assignees = item.assignees || [];
     const milestone = item.milestone;
-    const branchLine =
+    const metaLine =
       kind === "pull"
-        ? `<span class="branch-line"> wants to merge <strong>${escapeHtml(item.head?.ref || "")}</strong> into <strong>${escapeHtml(item.base?.ref || "")}</strong></span>`
-        : "";
+        ? `${userLink(item.user)} opened ${formatTime(item.created_at)}`
+        : `${userLink(item.user)} opened ${formatTime(item.created_at)} · ${comments.length} comments`;
     const timeline = [renderTimelineItem(item, "opened this")]
       .concat(comments.map((comment) => renderTimelineItem(comment, "commented")))
       .join("");
     const reviewNote = reviews.length
       ? `<div class="timeline-note">${reviews.length} review comments saved locally. Full review rendering is planned for a later pass.</div>`
       : "";
+    const sourceUrl = item.html_url || "";
 
     const conversationPanel = `
       <div class="issue-info-head">
         <h1 class="issue-info-title">${escapeHtml(item.title || "")} <span class="muted">#${item.number || ""}</span></h1>
         <div class="issue-info-meta">
           <span class="state-badge ${status.className}">${octicon(status.icon)} ${status.label}</span>
-          <span>${userLink(item.user)} opened ${formatTime(item.created_at)} · ${comments.length} comments${branchLine}</span>
+          <span>${metaLine}</span>
+          ${sourceUrl ? `<a class="issue-source-link" href="${escapeAttr(sourceUrl)}" target="_blank" rel="noreferrer" aria-label="Open on GitHub">${externalLinkIcon()}</a>` : ""}
         </div>
       </div>
       ${kind === "pull" ? renderPrDetailTabs(files) : ""}
@@ -481,6 +515,10 @@
     return /[A-Za-z0-9_$]/.test(char || "");
   }
 
+  function externalLinkIcon() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="none" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+  }
+
   function enhanceStaticMarkdown(root) {
     root.querySelectorAll(".markdown-body").forEach((body) => {
       body.innerHTML = markdown(body.textContent || "");
@@ -533,7 +571,7 @@
 
   function statusFor(item) {
     if (item.kind === "pull" && item.merged_at) return { className: "merged", icon: "git-merge", label: "Merged" };
-    if (item.state === "closed") return { className: "closed", icon: "issue-closed", label: "Closed" };
+    if (item.state === "closed") return { className: "closed", icon: item.kind === "pull" ? "git-pull-request-closed" : "issue-closed", label: "Closed" };
     return { className: "open", icon: item.kind === "pull" ? "git-pull-request" : "issue-opened", label: "Open" };
   }
 
@@ -734,7 +772,20 @@
 
   function localNumberHref(number) {
     if (!config) return `#${number}`;
-    return `#/${config.itemKind}/${number}`;
+    const currentKind = config.itemKind;
+    const otherKind = currentKind === "pull" ? "issue" : "pull";
+    const targetKind = numberExists(currentKind, number)
+      ? currentKind
+      : numberExists(otherKind, number)
+        ? otherKind
+        : currentKind;
+    const targetPage = targetKind === "pull" ? "pulls.html" : "issues.html";
+    const hash = `#/${targetKind}/${number}`;
+    return targetKind === currentKind ? hash : `${targetPage}${hash}`;
+  }
+
+  function numberExists(kind, number) {
+    return Boolean(state.manifest?.detail_pages?.[kind]?.[String(number)]);
   }
 
   function userLink(user) {

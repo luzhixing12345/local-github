@@ -40,7 +40,7 @@ _local_github_complete() {
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "sync build all --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "sync build all server --help -h" -- "$cur"))
     return 0
   fi
 

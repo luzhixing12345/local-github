@@ -1,41 +1,17 @@
 # local-github
-本地快速浏览 Github issue/pr，查看新增 comment/issue/pr/response
+
+本地快速浏览 Github issue/pr，查看新增 comment/issue/pr
+
+这个项目的起因是在网页端浏览 Github repo 的 issue/pr 之间切换比较慢，因为每次都要重新发起请求。而且作为一个非 member 也不想时时刻刻 watch 新增 issue/pr/comment 收到一堆邮件，但又想知道有哪些内容更新了，谁新增了回复，谁提交了新的 issue/pr，哪些 issue/pr 的 状态更改了，所以诞生了这个项目
+
+基本思路是通过 Github API 获取开源仓库的所有issue/pr信息保存到本地 json，然后本地生成静态页面浏览。考虑到绝大部分项目的 update 没有那么频繁，所以这种把数据拉到本地查看的方案也还好。这个项目的页面完全仿照 Github 的页面，几乎可以说 1:1 复刻，然后去掉了一些不重要的组件。
 
 ## Quick start
 
 ```bash
-python -m local_github.main luzhixing12345/zood
+pip install local_github
 ```
 
-命令会读取项目根目录 `.github-token`，从 GitHub API 同步仓库 Issue / PR 数据到 `data/github/`，然后生成 `docs/` 静态页面。
-
-生成结果采用少量 HTML 页面加数据分片：
-
-- `docs/index.html`：仓库入口。
-- `docs/repos/<owner>/<repo>/issues.html`：Issue 列表和详情页面壳。
-- `docs/repos/<owner>/<repo>/pulls.html`：PR 列表和详情页面壳。
-- `docs/repos/<owner>/<repo>/data/*.json`：原始数据分片。
-- `docs/repos/<owner>/<repo>/data/*.js`：用于直接 `file://` 打开的按需加载数据分片。
-
-Issue / PR 详情通过单页路由显示，不额外生成详情 HTML。例如：
-
-```text
-docs/repos/luzhixing12345/zood/issues.html#/issue/22
-docs/repos/luzhixing12345/zood/pulls.html#/pull/1
-```
-
-生成后直接打开：
-
-```text
-docs/index.html
-```
-
-也可以分步执行：
-
-```bash
-python -m local_github.main sync luzhixing12345/zood
-python -m local_github.main build
-```
 
 ## Shell completion
 

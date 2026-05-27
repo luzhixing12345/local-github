@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
+import socket
 import sys
 from pathlib import Path
+from socketserver import ThreadingMixIn
 from typing import Any, Dict, Iterable, List, Optional
 
 from .generator import build_site
@@ -12,6 +16,13 @@ from .storage import discover_repositories, load_bundle, repo_data_dir, save_sta
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
     args = parse_args(argv)
+    if args.command == "sync" and not args.repositories:
+        print_sync_suggestions()
+        return 0
+    if args.command == "server":
+        serve_docs(args.host, args.port)
+        return 0
+
     repos = [Repository.parse(value) for value in args.repositories]
 
     if args.command in ("sync", "all"):
@@ -29,7 +40,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 def parse_args(argv: Optional[Iterable[str]]) -> argparse.Namespace:
     raw_args = list(argv) if argv is not None else sys.argv[1:]
-    commands = {"sync", "build", "all", "-h", "--help"}
+    commands = {"sync", "build", "all", "server", "-h", "--help"}
     if raw_args and raw_args[0] not in commands:
         raw_args = ["all"] + raw_args
 
@@ -45,13 +56,17 @@ def parse_args(argv: Optional[Iterable[str]]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command")
 
     sync_parser = subparsers.add_parser("sync", help="Fetch repository data into data/github.")
-    sync_parser.add_argument("repositories", nargs="+", help="Repository names such as owner/repo.")
+    sync_parser.add_argument("repositories", nargs="*", help="Repository names such as owner/repo.")
 
     build_parser = subparsers.add_parser("build", help="Generate docs/ from local data.")
     build_parser.add_argument("repositories", nargs="*", help="Optional repository names to build.")
 
     all_parser = subparsers.add_parser("all", help="Fetch data and generate docs/.")
     all_parser.add_argument("repositories", nargs="+", help="Repository names such as owner/repo.")
+
+    server_parser = subparsers.add_parser("server", help="Serve the generated docs/ with a local HTTP server.")
+    server_parser.add_argument("--host", default="0.0.0.0", help="Host to bind. Default: 0.0.0.0.")
+    server_parser.add_argument("--port", type=int, default=8000, help="Port to bind. Default: 8000.")
 
     parsed = parser.parse_args(raw_args)
     if parsed.command is None:
@@ -60,6 +75,63 @@ def parse_args(argv: Optional[Iterable[str]]) -> argparse.Namespace:
     elif not hasattr(parsed, "repositories"):
         parsed.repositories = []
     return parsed
+
+
+def print_sync_suggestions(docs_repos_root: Path = Path("docs/repos")) -> None:
+    repos = discover_docs_repositories(docs_repos_root)
+    if not repos:
+        print("No repositories found under docs/repos.")
+        print("Usage: local-github sync owner/repo")
+        return
+
+    print("No repository specified for sync.")
+    print("Available repositories from docs/repos:")
+    for repo in repos:
+        print(f"  local-github sync {repo.full_name}")
+
+
+def discover_docs_repositories(docs_repos_root: Path = Path("docs/repos")) -> List[Repository]:
+    repos: List[Repository] = []
+    if not docs_repos_root.exists():
+        return repos
+    for owner_dir in sorted(path for path in docs_repos_root.iterdir() if path.is_dir()):
+        for repo_dir in sorted(path for path in owner_dir.iterdir() if path.is_dir()):
+            repos.append(Repository(owner_dir.name, repo_dir.name))
+    return repos
+
+
+class ReusableThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def serve_docs(host: str = "0.0.0.0", port: int = 8000) -> None:
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(Path.cwd()))
+    server = ReusableThreadingHTTPServer((host, port), handler)
+    actual_port = int(server.server_address[1])
+    local_url = f"http://127.0.0.1:{actual_port}/docs/index.html"
+    remote_url = f"http://{local_ip_address()}:{actual_port}/docs/index.html"
+
+    print("")
+    print(f"    ➜  Local:   {local_url}")
+    print(f"    ➜  Remote:  {remote_url}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped local-github server.")
+    finally:
+        server.server_close()
+
+
+def local_ip_address() -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return str(sock.getsockname()[0])
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
 
 
 def sync_repositories(repos: List[Repository]) -> None:

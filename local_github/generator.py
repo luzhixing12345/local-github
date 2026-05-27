@@ -289,7 +289,7 @@ def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str)
       <main class="container app-shell" data-local-github-app="{page_data}">
         <section data-route-view="list">
           <div class="list-toolbar">
-            <div class="filter-input">is:{'pr' if is_pull else 'issue'} is:open</div>
+            <input class="filter-input" type="search" data-search-input aria-label="Search {'pull requests' if is_pull else 'issues'}">
             <a class="btn btn-primary" href="{escape(repository.get("html_url", "#"))}/{'pulls' if is_pull else 'issues'}" target="_blank" rel="noreferrer">New {'pull request' if is_pull else 'issue'}</a>
           </div>
           <section class="issue-box">
@@ -410,7 +410,7 @@ def comment_news_rows(comments: List[Dict[str, Any]]) -> str:
         user_login = escape(user.get("login", "ghost"))
         comment_id = comment.get("comment_id")
         comment_href = f"{page}#/{kind}/{number}/comment-{comment_id}" if comment_id else f"{page}#/{kind}/{number}"
-        jump_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:1;"><path fill="none" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+        jump_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path fill="none" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
         rows.append(
             f"""
             <article class="timeline-item news-comment-item">
@@ -502,7 +502,7 @@ def static_status_for(item: Dict[str, Any], kind: str) -> Dict[str, str]:
     if kind == "pull" and item.get("merged_at"):
         return {"class_name": "merged", "icon": "git-merge", "label": "Merged"}
     if item.get("state") == "closed":
-        return {"class_name": "closed", "icon": "issue-closed", "label": "Closed"}
+        return {"class_name": "closed", "icon": "git-pull-request-closed" if kind == "pull" else "issue-closed", "label": "Closed"}
     return {"class_name": "open", "icon": "git-pull-request" if kind == "pull" else "issue-opened", "label": "Open"}
 
 
@@ -590,9 +590,11 @@ def octicon(name: str) -> str:
         )
     paths = {
         "star": "M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z",
-        "repo-forked": "M5 5.25a2.25 2.25 0 1 1-3 2.122V13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7.372a2.25 2.25 0 1 1 1.5 0V13A2.5 2.5 0 0 1 13 15.5H3A2.5 2.5 0 0 1 .5 13V7.372a2.25 2.25 0 1 1 1.5 0V13a1 1 0 0 0 1 1h2V5.25Zm3-3a2.25 2.25 0 1 1-3 2.122V7.5h6V4.372A2.25 2.25 0 0 1 8 2.25Z",
+        "repo-forked": "M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z",
         "issue-opened": "M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z",
         "git-pull-request": "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm9.5-.75h1.25A2.75 2.75 0 0 1 15 5.25v5.378a2.25 2.25 0 1 1-1.5 0V5.25c0-.69-.56-1.25-1.25-1.25H11v1.75a.25.25 0 0 1-.427.177L7.823 3.177a.25.25 0 0 1 0-.354l2.75-2.75A.25.25 0 0 1 11 .25V2.5Z",
+        "git-pull-request-closed": "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z",
+        "git-merge": "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
         "check": "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z",
         "comment": "M1.75 2.5h12.5a.25.25 0 0 1 .25.25v8.5a.25.25 0 0 1-.25.25H6.5a.75.75 0 0 0-.53.22L3.5 14.19v-1.94a.75.75 0 0 0-.75-.75h-1a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25ZM14.25 1H1.75A1.75 1.75 0 0 0 0 2.75v8.5C0 12.216.784 13 1.75 13H2v2.543a.457.457 0 0 0 .78.323L6.646 13h7.604A1.75 1.75 0 0 0 16 11.25v-8.5A1.75 1.75 0 0 0 14.25 1Z",
         "link": "M7.775 3.275a.75.75 0 0 0-1.06-1.06L3.19 5.74a3.75 3.75 0 0 0 0 5.303.75.75 0 0 0 1.06-1.061 2.25 2.25 0 0 1 0-3.182l3.525-3.525Zm.45 9.45a.75.75 0 0 0 1.06 1.06l3.525-3.525a3.75 3.75 0 0 0 0-5.303.75.75 0 1 0-1.06 1.061 2.25 2.25 0 0 1 0 3.182l-3.525 3.525Zm1.323-6.273a.75.75 0 0 0-1.06 0L5.95 8.99a.75.75 0 1 0 1.06 1.061l2.538-2.538a.75.75 0 0 0 0-1.06Z",

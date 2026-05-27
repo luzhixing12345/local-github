@@ -37,6 +37,7 @@ _local_github() {
     'sync:Fetch repository data into data/github'
     'build:Generate docs from local data'
     'all:Fetch data and generate docs'
+    'server:Serve docs with a local HTTP server'
   )
   repos=("${(@f)$(_local_github_repo_names)}")
 
