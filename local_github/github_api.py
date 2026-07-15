@@ -13,6 +13,17 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 
 API_ROOT = "https://api.github.com"
+TOKEN_HELP = """未找到 GitHub API Token（当前目录下的 .github-token）。
+
+请按以下步骤创建并保存 Token：
+  1. 打开 https://github.com/settings/tokens/new
+  2. 创建 Personal Access Token（公开仓库无需额外权限；
+     私有仓库需要授予对应的仓库读取权限）。
+  3. 仅将 Token 值写入文件：
+       printf '%s\\n' 'YOUR_TOKEN' > .github-token
+       chmod 600 .github-token
+
+请勿将 .github-token 提交到版本控制。"""
 
 
 @dataclass(frozen=True)
@@ -93,7 +104,6 @@ class GitHubClient:
         issue_comments = self.fetch_issue_comments(repo, issues)
         pull_comments = self.fetch_issue_comments(repo, pulls)
         review_comments = self.fetch_review_comments(repo)
-        pull_files = self.fetch_pull_files(repo, pulls)
 
         return {
             "repository": repo_json,
@@ -102,7 +112,7 @@ class GitHubClient:
             "issue_comments": issue_comments,
             "pull_comments": pull_comments,
             "review_comments": review_comments,
-            "pull_files": pull_files,
+            "pull_files": {},
             "synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
@@ -150,6 +160,9 @@ class GitHubClient:
     def fetch_pull_review_comments(self, repo: Repository, number: int) -> List[Dict[str, Any]]:
         return self.get_paginated(f"/repos/{repo.full_name}/pulls/{number}/comments")
 
+    def fetch_pull_files_for_pull(self, repo: Repository, number: int) -> List[Dict[str, Any]]:
+        return self.get_paginated(f"/repos/{repo.full_name}/pulls/{number}/files")
+
     def fetch_pull_files(
         self,
         repo: Repository,
@@ -161,7 +174,7 @@ class GitHubClient:
         total = len(pull_list)
         for index, pull in enumerate(pull_list, start=1):
             number = str(pull["number"])
-            files[number] = self.get_paginated(f"/repos/{repo.full_name}/pulls/{number}/files")
+            files[number] = self.fetch_pull_files_for_pull(repo, int(number))
             if progress:
                 progress(index, total, len(files[number]))
         return files
@@ -216,3 +229,10 @@ def read_token(path: str = ".github-token") -> Optional[str]:
             return token or None
     except FileNotFoundError:
         return None
+
+
+def require_token(path: str = ".github-token") -> str:
+    token = read_token(path)
+    if token is None:
+        raise GitHubError(TOKEN_HELP)
+    return token

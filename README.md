@@ -12,6 +12,25 @@
 pip install local_github
 ```
 
+同步数据前，需要在运行命令的当前目录创建 `.github-token`：
+
+1. 打开 https://github.com/settings/tokens/new 创建 Personal Access Token。
+2. 仅访问公开仓库时不需要额外权限；访问私有仓库时需要授予对应的仓库读取权限。
+3. 将 Token 保存到文件并限制文件权限：
+
+```bash
+printf '%s\n' 'YOUR_TOKEN' > .github-token
+chmod 600 .github-token
+local-github sync owner/repo
+```
+
+`sync` 完成后会自动生成 `docs/` 并启动本地服务器。可通过 `--host` 和 `--port` 指定监听地址：
+
+```bash
+local-github sync owner/repo --host 127.0.0.1 --port 8000
+```
+
+`.github-token` 已被 `.gitignore` 忽略，请勿将 Token 提交到版本控制。
 
 ## Shell completion
 

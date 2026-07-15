@@ -1,3 +1,3 @@
 """Generate a local static browser for GitHub issues and pull requests."""
 
-__all__ = []
+from .main import main

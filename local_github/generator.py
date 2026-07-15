@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import shutil
@@ -125,7 +126,7 @@ def detail_item(item: Dict[str, Any], bundle: Dict[str, Any], kind: str) -> Dict
         "item": item,
         "comments": bundle.get(comments_key, {}).get(number, []),
         "review_comments": review_comments,
-        "files": bundle.get("pull_files", {}).get(number, []) if kind == "pull" else [],
+        "files": [],
     }
 
 
@@ -183,6 +184,8 @@ def summary_item(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> Dic
         "merged_at": item.get("merged_at"),
         "draft": item.get("draft", False),
         "user": compact_user(item.get("user")),
+        "assignees": [compact_user(user) for user in item.get("assignees", [])],
+        "participant_logins": participant_logins(item, kind, bundle),
         "labels": [
             {"name": label.get("name"), "color": label.get("color")}
             for label in item.get("labels", [])
@@ -205,6 +208,29 @@ def comment_count(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> in
         if comment.get("pull_request_url", "").endswith(f"/{number}")
     )
     return issue_comment_total + review_total
+
+
+def participant_logins(item: Dict[str, Any], kind: str, bundle: Dict[str, Any]) -> List[str]:
+    number = str(item.get("number"))
+    users = [item.get("user")] + list(item.get("assignees", []))
+    users.extend(
+        comment.get("user")
+        for comment in bundle.get("pull_comments" if kind == "pull" else "issue_comments", {}).get(number, [])
+    )
+    if kind == "pull":
+        users.extend(
+            comment.get("user")
+            for comment in bundle.get("review_comments", [])
+            if comment.get("pull_request_url", "").endswith(f"/{number}")
+        )
+    return sorted(
+        {
+            str(user.get("login"))
+            for user in users
+            if user and user.get("login")
+        },
+        key=str.lower,
+    )
 
 
 def compact_user(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,6 +323,15 @@ def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str)
               <button class="tab-button" type="button" data-state-filter="all">All <span data-count="total">0</span></button>
               <button class="tab-button active" type="button" data-state-filter="open">{octicon("issue-opened" if not is_pull else "git-pull-request")} Open <span data-count="open">0</span></button>
               <button class="tab-button" type="button" data-state-filter="closed">{octicon("check")} Closed <span data-count="closed">0</span></button>
+              <div class="assignee-filter" data-assignee-filter>
+                <button class="assignee-filter-trigger" type="button" data-assignee-trigger aria-haspopup="true" aria-expanded="false">
+                  Assignee: <span data-assignee-label>All</span>
+                </button>
+                <div class="assignee-filter-menu" data-assignee-menu hidden>
+                  <input class="assignee-filter-input" type="search" data-assignee-search placeholder="Search users" aria-label="Search assignees">
+                  <div class="assignee-filter-options" data-assignee-options></div>
+                </div>
+              </div>
             </div>
             <div class="issue-list" data-list>
               <div class="empty-state">Loading...</div>
@@ -547,8 +582,8 @@ def repo_header(repo: Repository, repository: Dict[str, Any], active: str, news_
 
 
 def layout(title: str, body: str, root_prefix: str) -> str:
-    css = f"{root_prefix}css/github.css"
-    js = f"{root_prefix}js/app.js"
+    css = versioned_asset_url(root_prefix, "css/github.css")
+    js = versioned_asset_url(root_prefix, "js/app.js")
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -568,6 +603,12 @@ def layout(title: str, body: str, root_prefix: str) -> str:
 </body>
 </html>
 """
+
+
+def versioned_asset_url(root_prefix: str, relative_path: str) -> str:
+    content = (ASSETS_ROOT / relative_path).read_bytes()
+    version = hashlib.sha256(content).hexdigest()[:12]
+    return f"{root_prefix}{relative_path}?v={version}"
 
 
 def escape(value: Any) -> str:

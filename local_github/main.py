@@ -3,14 +3,17 @@ from __future__ import annotations
 import argparse
 import functools
 import http.server
+import json
+import re
 import socket
 import sys
+import urllib.parse
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any, Dict, Iterable, List, Optional
 
-from .generator import build_site
-from .github_api import GitHubClient, Repository, read_token
+from .generator import build_site, copy_assets
+from .github_api import GitHubClient, GitHubError, Repository, require_token
 from .storage import discover_repositories, load_bundle, repo_data_dir, save_stage
 
 
@@ -25,7 +28,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     repos = [Repository.parse(value) for value in args.repositories]
 
-    if args.command in ("sync", "all"):
+    if args.command == "sync":
+        sync_repositories(repos)
+        build_site(discover_repositories())
+        print(f"Generated {Path('docs/index.html').resolve()}")
+        serve_docs(args.host, args.port)
+        return 0
+
+    if args.command == "all":
         sync_repositories(repos)
 
     if args.command in ("build", "all"):
@@ -55,8 +65,10 @@ def parse_args(argv: Optional[Iterable[str]]) -> argparse.Namespace:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    sync_parser = subparsers.add_parser("sync", help="Fetch repository data into data/github.")
+    sync_parser = subparsers.add_parser("sync", help="Fetch data, build docs/, and start the local server.")
     sync_parser.add_argument("repositories", nargs="*", help="Repository names such as owner/repo.")
+    sync_parser.add_argument("--host", default="0.0.0.0", help="Server host. Default: 0.0.0.0.")
+    sync_parser.add_argument("--port", type=int, default=8000, help="Server port. Default: 8000.")
 
     build_parser = subparsers.add_parser("build", help="Generate docs/ from local data.")
     build_parser.add_argument("repositories", nargs="*", help="Optional repository names to build.")
@@ -105,8 +117,68 @@ class ReusableThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
+class LocalGitHubRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        if not urllib.parse.urlsplit(self.path).path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def do_GET(self) -> None:
+        path = urllib.parse.urlsplit(self.path).path
+        if path.startswith("/api/"):
+            self.handle_api_request(path)
+            return
+        super().do_GET()
+
+    def handle_api_request(self, path: str) -> None:
+        parts = [urllib.parse.unquote(part) for part in path.strip("/").split("/")]
+        if (
+            len(parts) != 7
+            or parts[:2] != ["api", "repos"]
+            or parts[4] != "pulls"
+            or parts[6] != "files"
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", parts[2]) is None
+            or re.fullmatch(r"[A-Za-z0-9._-]+", parts[3]) is None
+            or not parts[5].isdigit()
+            or int(parts[5]) < 1
+        ):
+            self.send_json(404, {"error": "API endpoint not found."})
+            return
+
+        repo = Repository(parts[2], parts[3])
+        if not (repo_data_dir(repo) / "repo.json").is_file():
+            self.send_json(404, {"error": f"Repository {repo.full_name} has not been synced locally."})
+            return
+
+        try:
+            token = require_token()
+        except GitHubError as exc:
+            self.send_json(503, {"error": str(exc)})
+            return
+
+        try:
+            files = GitHubClient(token).fetch_pull_files_for_pull(repo, int(parts[5]))
+        except GitHubError as exc:
+            self.send_json(502, {"error": str(exc)})
+            return
+
+        self.send_json(200, {"files": files})
+
+    def send_json(self, status: int, payload: Dict[str, Any]) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+
 def serve_docs(host: str = "0.0.0.0", port: int = 8000) -> None:
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(Path.cwd()))
+    docs_root = Path("docs")
+    docs_root.mkdir(parents=True, exist_ok=True)
+    copy_assets(docs_root)
+    handler = functools.partial(LocalGitHubRequestHandler, directory=str(Path.cwd()))
     server = ReusableThreadingHTTPServer((host, port), handler)
     actual_port = int(server.server_address[1])
     local_url = f"http://127.0.0.1:{actual_port}/docs/index.html"
@@ -135,7 +207,10 @@ def local_ip_address() -> str:
 
 
 def sync_repositories(repos: List[Repository]) -> None:
-    token = read_token()
+    try:
+        token = require_token()
+    except GitHubError as exc:
+        raise SystemExit(str(exc)) from exc
     client = GitHubClient(token)
     for repo in repos:
         previous = load_previous_bundle(repo)
@@ -147,18 +222,18 @@ def sync_repositories(repos: List[Repository]) -> None:
         else:
             print("  No previous local data found. Running full sync.")
 
-        print("  [1/8] Fetching repository metadata ...")
+        print("  [1/7] Fetching repository metadata ...")
         repository = client.fetch_repository(repo)
         repo_path = save_stage(repo, "repo.json", repository)
         print(f"        Saved repo.json -> {repo_path}")
 
-        print("  [2/8] Fetching issues ...")
+        print("  [2/7] Fetching issues ...")
         fetched_issues = client.fetch_issue_events(repo, since=previous_synced_at, include_pulls=False) if incremental else client.fetch_issues(repo)
         issues = merge_items(previous.get("issues", []) if previous else [], fetched_issues)
         issues_path = save_stage(repo, "issues.json", issues)
         print(f"        Saved issues.json ({len(issues)} total, {len(fetched_issues)} fetched) -> {issues_path}")
 
-        print("  [3/8] Fetching pull requests ...")
+        print("  [3/7] Fetching pull requests ...")
         if incremental:
             updated_pull_refs = client.fetch_issue_events(repo, since=previous_synced_at, include_pulls=True)
             fetched_pulls = [client.fetch_pull(repo, int(item["number"])) for item in updated_pull_refs]
@@ -168,7 +243,7 @@ def sync_repositories(repos: List[Repository]) -> None:
         pulls_path = save_stage(repo, "pulls.json", pulls)
         print(f"        Saved pulls.json ({len(pulls)} total, {len(fetched_pulls)} fetched) -> {pulls_path}")
 
-        print("  [4/8] Fetching issue comments ...")
+        print("  [4/7] Fetching issue comments ...")
         issue_comments = dict(previous.get("issue_comments", {}) if previous else {})
         issue_comments.update(
             client.fetch_issue_comments(repo, fetched_issues, progress=item_progress("issues", "comments"))
@@ -179,7 +254,7 @@ def sync_repositories(repos: List[Repository]) -> None:
             f" -> {issue_comments_path}"
         )
 
-        print("  [5/8] Fetching pull request conversation comments ...")
+        print("  [5/7] Fetching pull request conversation comments ...")
         pull_comments = dict(previous.get("pull_comments", {}) if previous else {})
         pull_comments.update(
             client.fetch_issue_comments(repo, fetched_pulls, progress=item_progress("pull requests", "comments"))
@@ -190,7 +265,7 @@ def sync_repositories(repos: List[Repository]) -> None:
             f" -> {pull_comments_path}"
         )
 
-        print("  [6/8] Fetching pull request review comments ...")
+        print("  [6/7] Fetching pull request review comments ...")
         if incremental:
             review_comments = merge_review_comments(
                 previous.get("review_comments", []),
@@ -205,21 +280,7 @@ def sync_repositories(repos: List[Repository]) -> None:
         review_comments_path = save_stage(repo, "review_comments.json", review_comments)
         print(f"        Saved review_comments.json ({len(review_comments)} comments) -> {review_comments_path}")
 
-        print("  [7/8] Fetching pull request changed files ...")
-        pull_files = dict(previous.get("pull_files", {}) if previous else {})
-        file_targets = unique_items_by_number(
-            list(fetched_pulls) + pulls_missing_files(pulls, pull_files)
-        )
-        if len(file_targets) != len(fetched_pulls):
-            print(
-                f"        {len(file_targets) - len(fetched_pulls)} historical pull requests are missing files; "
-                "fetching them now."
-            )
-        pull_files.update(client.fetch_pull_files(repo, file_targets, progress=item_progress("pull requests", "files")))
-        pull_files_path = save_stage(repo, "pull_files.json", pull_files)
-        print(f"        Saved pull_files.json ({sum(len(value) for value in pull_files.values())} files) -> {pull_files_path}")
-
-        print("  [8/8] Writing sync metadata ...")
+        print("  [7/7] Writing sync metadata ...")
         news = build_news(previous, issues, pulls, issue_comments, pull_comments, review_comments, previous_synced_at)
         news_path = save_stage(repo, "news.json", news)
         print(f"        Saved news.json ({news['total']} updates) -> {news_path}")
@@ -228,8 +289,6 @@ def sync_repositories(repos: List[Repository]) -> None:
         print(f"Fetch Data Done {repo.full_name}: {len(issues)} issues, {len(pulls)} pull requests -> {repo_path.parent}")
         
         print("-" * 80)
-        print("Run `local-github build` to generate static HTML from the fetched data.")
-        
 
 def load_previous_bundle(repo: Repository) -> Dict[str, Any]:
     if not (repo_data_dir(repo) / "repo.json").exists():
@@ -245,17 +304,6 @@ def merge_items(existing: List[Dict[str, Any]], updates: List[Dict[str, Any]]) -
     for item in updates:
         merged[int(item["number"])] = item
     return sorted(merged.values(), key=lambda item: item.get("number", 0), reverse=True)
-
-
-def pulls_missing_files(pulls: List[Dict[str, Any]], pull_files: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
-    return [pull for pull in pulls if str(pull.get("number")) not in pull_files]
-
-
-def unique_items_by_number(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    unique: Dict[int, Dict[str, Any]] = {}
-    for item in items:
-        unique[int(item["number"])] = item
-    return sorted(unique.values(), key=lambda item: item.get("number", 0), reverse=True)
 
 
 def merge_review_comments(existing: List[Dict[str, Any]], updates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
