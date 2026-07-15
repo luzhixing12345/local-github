@@ -14,27 +14,34 @@ pip install local_github
 
 同步数据前，需要在运行命令的当前目录创建 `.github-token`：
 
-1. 打开 https://github.com/settings/tokens/new 创建 Personal Access Token。
-2. 仅访问公开仓库时不需要额外权限；访问私有仓库时需要授予对应的仓库读取权限。
-3. 将 Token 保存到文件并限制文件权限：
+1. 打开 https://github.com/settings/tokens/new 创建 Personal Access Token，使用 Access Token 后抓取 Github 信息没有限制
+2. 给一个读仓库的权限
+
+> `.github-token` 已被 `.gitignore` 忽略，请勿将 Token 提交到版本控制。
+
+## 同步仓库信息
+
+使用 sync 同步一个仓库的信息，此过程会获取所有的 issue/issue comments/pr/pr comments
 
 ```bash
-printf '%s\n' 'YOUR_TOKEN' > .github-token
-chmod 600 .github-token
 local-github sync owner/repo
 ```
 
-`sync` 完成后会自动生成 `docs/` 并启动本地服务器。可通过 `--host` 和 `--port` 指定监听地址：
+然后构建网页，打开本地的一个 http 服务器，可以直接访问本地版 github
+
+初次构建获取数据量很大的话会比较慢，之后的再次 sync 都是增量获取会很快
+
+如果只是希望查看网页不需要同步可以使用 server
 
 ```bash
-local-github sync owner/repo --host 127.0.0.1 --port 8000
+local-github server
 ```
 
-`.github-token` 已被 `.gitignore` 忽略，请勿将 Token 提交到版本控制。
+news 一栏中可以看到两次 sync 之间的差异，有哪些 issue/pr/comment 更新了
 
 ## Shell completion
 
-`pip install local_github` 会安装 bash / zsh 补全脚本到当前 Python prefix 的标准目录：
+`pip install local_github` 会自动安装 bash / zsh 补全脚本到当前 Python prefix 的标准目录：
 
 - `share/bash-completion/completions/local-github`
 - `share/zsh/site-functions/_local-github`
@@ -43,10 +50,4 @@ local-github sync owner/repo --host 127.0.0.1 --port 8000
 
 ```bash
 local-github sync <Tab>
-```
-
-如果 `docs/` 不在当前项目目录下，可以指定：
-
-```bash
-export LOCAL_GITHUB_DOCS_REPOS=/path/to/docs/repos
 ```

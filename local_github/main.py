@@ -118,6 +118,9 @@ class ReusableThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer):
 
 
 class LocalGitHubRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
     def end_headers(self) -> None:
         if not urllib.parse.urlsplit(self.path).path.startswith("/api/"):
             self.send_header("Cache-Control", "no-cache")
