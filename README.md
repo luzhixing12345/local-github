@@ -45,6 +45,8 @@ local-github sync owner/repo
 local-github server
 ```
 
+> 使用沉浸式翻译的话建议在设置->进阶设置中添加 http://127.0.0.1:8000/docs/repos 为仅译文模式
+
 ## 相关功能介绍
 
 - pr 一栏默认不会展示 code diff 的信息，需要手动点击 load diff 之后才会获取并展示
