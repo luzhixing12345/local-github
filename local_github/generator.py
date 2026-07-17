@@ -305,7 +305,7 @@ def render_collection_shell(repo: Repository, bundle: Dict[str, Any], kind: str)
             {
                 "kind": kind,
                 "itemKind": "pull" if is_pull else "issue",
-                "dataRoot": f"../../../../data/github/{repo.owner}/{repo.name}",
+                "dataRoot": f"../../../data/github/{repo.owner}/{repo.name}",
             }
         ),
         quote=True,

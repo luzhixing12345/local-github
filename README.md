@@ -33,6 +33,8 @@ local-github sync owner/repo
 
 同步数据后会自动构建静态网页，打开本地的一个 http 服务器，并给出一个 Url 链接
 
+下载的仓库数据保存在 `docs/data/github/<owner>/<repo>`，与生成的静态网页统一放在 `docs` 目录下。
+
 初次构建获取数据量很大的话会比较慢，之后的再次 sync 都是增量获取会很快
 
 如果只是希望查看网页不需要同步可以使用 server

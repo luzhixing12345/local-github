@@ -34,7 +34,7 @@ _local_github_repo_names() {
 _local_github() {
   local -a commands repos
   commands=(
-    'sync:Fetch repository data into data/github'
+    'sync:Fetch repository data into docs/data/github'
     'build:Generate docs from local data'
     'all:Fetch data and generate docs'
     'server:Serve docs with a local HTTP server'

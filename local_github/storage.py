@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from .github_api import Repository
 
 
-DATA_ROOT = Path("data/github")
+DATA_ROOT = Path("docs/data/github")
 
 
 def repo_data_dir(repo: Repository, data_root: Path = DATA_ROOT) -> Path:
