@@ -2,6 +2,8 @@
 
 本地快速浏览 Github issue/pr，查看新增 comment/issue/pr
 
+![20260717095918](https://raw.githubusercontent.com/learner-lu/picbed/master/20260717095918.png)
+
 在线体验：https://luzhixing12345.github.io/local-github/
 
 这个项目的起因是在网页端浏览 Github repo 的 issue/pr 之间切换比较慢，因为每次都要重新发起请求。而且作为一个非 member 也不想时时刻刻 watch 新增 issue/pr/comment 收到一堆邮件，但又想知道有哪些内容更新了，谁新增了回复，谁提交了新的 issue/pr，哪些 issue/pr 的 状态更改了，所以诞生了这个项目
