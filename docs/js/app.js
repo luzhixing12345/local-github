@@ -383,12 +383,16 @@
       kind === "pull"
         ? `${userLink(item.user)} opened ${formatTime(item.created_at)}`
         : `${userLink(item.user)} opened ${formatTime(item.created_at)} · ${comments.length} comments`;
+    const conversationItems = comments
+      .map((comment) => ({ createdAt: comment.created_at || "", html: renderTimelineItem(comment, "commented") }))
+      .concat(buildReviewThreads(reviews).map((thread) => ({
+        createdAt: thread.root.created_at || "",
+        html: renderReviewThread(thread),
+      })))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     const timeline = [renderTimelineItem(item, "opened this")]
-      .concat(comments.map((comment) => renderTimelineItem(comment, "commented")))
+      .concat(conversationItems.map((entry) => entry.html))
       .join("");
-    const reviewNote = reviews.length
-      ? `<div class="timeline-note">${reviews.length} review comments saved locally. Full review rendering is planned for a later pass.</div>`
-      : "";
     const sourceUrl = item.html_url || "";
 
     const conversationPanel = `
@@ -404,7 +408,6 @@
       <div class="issue-info-layout" data-pr-panel="conversation">
         <section class="timeline">
           ${timeline}
-          ${reviewNote}
         </section>
         <aside class="issue-sidebar">
           ${sidebarSection("Assignees", assignees.length ? assignees.map(renderSidebarUser).join("") : '<span class="muted">No one assigned</span>')}
@@ -704,6 +707,123 @@
         </div>
       </article>
     `;
+  }
+
+  function buildReviewThreads(reviews) {
+    const byId = new Map(reviews.map((comment) => [String(comment.id), { root: comment, replies: [] }]));
+    const roots = [];
+    reviews.forEach((comment) => {
+      const parent = comment.in_reply_to_id ? byId.get(String(comment.in_reply_to_id)) : null;
+      if (parent) {
+        parent.replies.push(comment);
+      } else {
+        roots.push(byId.get(String(comment.id)));
+      }
+    });
+    roots.forEach((thread) => thread.replies.sort((left, right) => String(left.created_at || "").localeCompare(String(right.created_at || ""))));
+    return roots.sort((left, right) => String(left.root.created_at || "").localeCompare(String(right.root.created_at || "")));
+  }
+
+  function renderReviewThread(thread) {
+    const comment = thread.root;
+    const user = comment.user || {};
+    const profileUrl = userProfileUrl(user);
+    const login = escapeHtml(user.login || "ghost");
+    const line = comment.line || comment.original_line;
+    const location = line ? `L${line}` : "outdated";
+    const commentId = comment.id ? ` id="comment-${escapeAttr(comment.id)}"` : "";
+    return `
+      <article class="timeline-item review-timeline-item"${commentId}>
+        <a class="avatar-link" href="${escapeAttr(profileUrl)}" target="_blank" rel="noreferrer" aria-label="${login}">
+          <img class="avatar" src="${escapeAttr(user.avatar_url || "")}" alt="">
+        </a>
+        <div class="review-thread">
+          <div class="review-file-header">
+            ${octicon("file-diff")}
+            <a href="${escapeAttr(comment.html_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(comment.path || "unknown file")}</a>
+            <span class="review-location">${escapeHtml(location)}</span>
+          </div>
+          ${renderReviewDiff(comment)}
+          ${renderReviewComment(comment, "reviewed")}
+          ${thread.replies.map((reply) => renderReviewComment(reply, "replied")).join("")}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderReviewComment(comment, action) {
+    const user = comment.user || {};
+    const profileUrl = userProfileUrl(user);
+    const login = escapeHtml(user.login || "ghost");
+    const commentId = action === "replied" && comment.id ? ` id="comment-${escapeAttr(comment.id)}"` : "";
+    return `
+      <div class="review-comment"${commentId}>
+        <div class="comment-header">
+          <img class="review-comment-avatar" src="${escapeAttr(user.avatar_url || "")}" alt="">
+          <strong><a class="comment-author" href="${escapeAttr(profileUrl)}" target="_blank" rel="noreferrer">${login}</a></strong>
+          <span>${escapeHtml(action)} ${formatTime(comment.created_at)}</span>
+          ${comment.html_url ? `<a class="comment-jump-link" href="${escapeAttr(comment.html_url)}" target="_blank" rel="noreferrer" aria-label="Open review comment on GitHub">${externalLinkIcon()}</a>` : ""}
+        </div>
+        <div class="markdown-body">${markdown(comment.body || "") || '<p class="muted">No comment provided.</p>'}</div>
+      </div>
+    `;
+  }
+
+  function renderReviewDiff(comment) {
+    const diff = String(comment.diff_hunk || "");
+    if (!diff.trim()) {
+      return '<div class="review-diff-unavailable">Code context is no longer available.</div>';
+    }
+    const lines = diff.split("\n");
+    let oldLine = 0;
+    let newLine = 0;
+    const hasOriginalLocation = Boolean(comment.original_start_line || comment.original_line);
+    const targetEnd = Number(hasOriginalLocation ? comment.original_line : comment.line || 0);
+    const targetStart = Number(
+      hasOriginalLocation
+        ? comment.original_start_line || comment.original_line
+        : comment.start_line || comment.line || 0
+    );
+    const targetSide = String(comment.start_side || comment.side || "RIGHT").toUpperCase();
+    let hunkHeader = "";
+    const parsedRows = [];
+    lines.forEach((value) => {
+      const hunk = value.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunk) {
+        oldLine = Number(hunk[1]);
+        newLine = Number(hunk[2]);
+        hunkHeader = value;
+        return;
+      }
+      const type = value.startsWith("+") ? "addition" : value.startsWith("-") ? "deletion" : "context";
+      const oldNumber = type === "addition" ? "" : oldLine;
+      const newNumber = type === "deletion" ? "" : newLine;
+      const currentLine = targetSide === "LEFT" ? oldNumber : newNumber;
+      const selected = targetStart && Number(currentLine) >= targetStart && Number(currentLine) <= targetEnd;
+      parsedRows.push({ value, type, oldNumber, newNumber, selected });
+      if (type !== "addition") oldLine += 1;
+      if (type !== "deletion") newLine += 1;
+    });
+    const selectedIndexes = parsedRows
+      .map((row, index) => row.selected ? index : -1)
+      .filter((index) => index >= 0);
+    let first = selectedIndexes.length ? Math.max(0, selectedIndexes[0] - 3) : 0;
+    let last = selectedIndexes.length ? Math.min(parsedRows.length - 1, selectedIndexes[selectedIndexes.length - 1] + 3) : Math.min(parsedRows.length - 1, 6);
+    const rows = [];
+    if (hunkHeader) {
+      rows.push(`<tr class="review-diff-hunk"><td colspan="3"><code>${escapeHtml(hunkHeader)}</code></td></tr>`);
+    }
+    if (first > 0) rows.push(renderReviewDiffEllipsis(first));
+    parsedRows.slice(first, last + 1).forEach((row) => {
+      const selected = row.selected ? " review-diff-selected" : "";
+      rows.push(`<tr class="review-diff-${row.type}${selected}"><td class="review-diff-num">${row.oldNumber}</td><td class="review-diff-num">${row.newNumber}</td><td class="review-diff-code"><code>${escapeHtml(row.value)}</code></td></tr>`);
+    });
+    if (last < parsedRows.length - 1) rows.push(renderReviewDiffEllipsis(parsedRows.length - last - 1));
+    return `<div class="review-diff"><table><tbody>${rows.join("")}</tbody></table></div>`;
+  }
+
+  function renderReviewDiffEllipsis(hiddenLines) {
+    return `<tr class="review-diff-ellipsis"><td colspan="3">${hiddenLines} ${hiddenLines === 1 ? "line" : "lines"} hidden</td></tr>`;
   }
 
   function sidebarSection(title, body) {

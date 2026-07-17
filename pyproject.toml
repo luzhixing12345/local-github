@@ -1,6 +1,6 @@
 [project]
 name = "local_github"
-version = "0.1.5"
+version = "0.1.6"
 description = "本地快速浏览 Github issue/pr，查看新增 comment/issue/pr/response"
 authors = [
     {name = "luzhixing12345",email = "luzhixing12345@163.com"}

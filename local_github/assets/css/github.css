@@ -712,6 +712,105 @@ h1 {
   box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.14);
 }
 
+.timeline-item-target .review-thread {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.14);
+}
+
+.review-thread {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.review-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--subtle);
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.review-file-header a {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-location {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.review-diff {
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-diff table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: collapse;
+  font: 12px/20px ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+}
+
+.review-diff td { padding: 0; }
+.review-diff-num {
+  width: 44px;
+  padding: 0 8px !important;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+.review-diff-code {
+  min-width: 360px;
+  padding: 0 12px !important;
+  white-space: pre;
+}
+.review-diff code { padding: 0; background: transparent; font: inherit; }
+.review-diff-hunk { color: #0550ae; background: #ddf4ff; }
+.review-diff-hunk td { padding: 4px 12px; }
+.review-diff-ellipsis {
+  color: var(--muted);
+  background: var(--subtle);
+  text-align: center;
+}
+.review-diff-ellipsis td {
+  padding: 3px 12px;
+  border-top: 1px solid var(--border-muted);
+  border-bottom: 1px solid var(--border-muted);
+  font: 12px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.review-diff-addition { background: #dafbe1; }
+.review-diff-deletion { background: #ffebe9; }
+.review-diff-selected { box-shadow: inset 4px 0 #d4a72c; }
+.review-diff-selected .review-diff-code { background: #fff8c5; }
+.review-diff-unavailable {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--subtle);
+  font-size: 13px;
+}
+
+.review-comment + .review-comment { border-top: 1px solid var(--border); }
+.review-comment .comment-header { border-radius: 0; }
+.review-comment-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
 .markdown-body {
   padding: 16px;
   overflow-wrap: anywhere;
